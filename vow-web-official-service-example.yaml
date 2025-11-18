@@ -1,0 +1,149 @@
+# ==================== vow-web-official Kubernetes Service 範例 ====================
+# 這個檔案是部署 vow-web-official 服務到 GKE 時的參考配置
+# 請根據實際的服務需求調整
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vow-web-official
+  labels:
+    app: vow-web-official
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vow-web-official
+  namespace: vow-web-official
+  labels:
+    app: vow-web-official
+spec:
+  replicas: 2  # 可根據需求調整
+  selector:
+    matchLabels:
+      app: vow-web-official
+  template:
+    metadata:
+      labels:
+        app: vow-web-official
+        # 重要：GKE NEG 需要的標籤
+        cloud.google.com/neg: '{"exposed_ports":{"80":{}}}'
+    spec:
+      containers:
+      - name: vow-web-official
+        image: gcr.io/your-project/vow-web-official:latest  # 請替換為實際 image
+        ports:
+        - containerPort: 80
+          name: http
+        # Health Check
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        # 環境變數
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "80"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vow-web-official-service
+  namespace: vow-web-official
+  annotations:
+    # 重要：這個 annotation 啟用 GKE NEG (Network Endpoint Group)
+    # NEG 讓 External Load Balancer 可以直接連接到 Pods
+    cloud.google.com/neg: '{"exposed_ports":{"80":{}}}'
+    # 如果有 Ingress，也可以加這些 annotations
+    # cloud.google.com/backend-config: '{"ports":{"80":"vow-web-backend-config"}}'
+    # networking.gke.io/v1beta1.FrontendConfig: "vow-web-frontend-config"
+  labels:
+    app: vow-web-official
+spec:
+  type: ClusterIP  # 使用 ClusterIP，透過 Load Balancer 對外服務
+  selector:
+    app: vow-web-official
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+---
+# 可選：BackendConfig 用於更細緻的健康檢查設定
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: vow-web-backend-config
+  namespace: vow-web-official
+spec:
+  healthCheck:
+    checkIntervalSec: 30
+    timeoutSec: 10
+    healthyThreshold: 3
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+  # CDN 設定 (如果需要)
+  # cdnPolicy:
+  #   cacheMode: "USE_ORIGIN_HEADERS"
+  #   defaultTtl: 3600
+---
+# 可選：FrontendConfig 用於 HTTPS 重導向等設定
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: vow-web-frontend-config
+  namespace: vow-web-official
+spec:
+  # 自動重導向 HTTP 到 HTTPS
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT
+  # SSL 設定
+  sslPolicy: "gke-ssl-policy"  # 如果有的話
+
+# ==================== 部署說明 ====================
+# 1. 首先建立 namespace：
+#    kubectl apply -f this-file.yaml
+#
+# 2. 建立或更新服務部署：
+#    - 將 gcr.io/your-project/vow-web-official:latest 替換為實際的 image
+#    - 根據服務需求調整 replicas、resources 等設定
+#    - 確保服務提供 /health 端點用於健康檢查
+#
+# 3. 驗證部署：
+#    kubectl get pods -n vow-web-official
+#    kubectl get svc -n vow-web-official
+#    kubectl describe service vow-web-official-service -n vow-web-official
+#
+# 4. 驗證 NEG：
+#    kubectl describe service vow-web-official-service -n vow-web-official | grep "neg"
+#
+# 5. 啟用 Terraform 完整功能：
+#    修改 terraform.tfvars 中的 enable_backend_service = true
+#    執行 terraform apply
+#
+# 6. 測試 Load Balancer：
+#    使用 terraform output 取得的 IP 位址測試服務
+#
+# 注意事項：
+# - 確保 GKE 叢集有適當的權限建立 NEG
+# - 健康檢查路徑 /health 必須存在並返回 200 OK
+# - 服務需要監聽 port 80 (或修改配置中的 port)
+# - NEG 會自動建立，名稱格式通常為 k8s1-<service-name>-<port>-<hash>
