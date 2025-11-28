@@ -44,14 +44,21 @@ locals {
       label = "redis-auth"
       members = [
         "serviceAccount:${google_service_account.pod_sa["vow-bff-official"].email}",
-        "serviceAccount:${google_service_account.pod_sa["vow-bff-cms"].email}"
+        "serviceAccount:${google_service_account.pod_sa["vow-bff-cms"].email}",
+        # 開發者群組權限，用於 IAP 連線和除錯
+        "user:00597438@lab.cathaybkdev.com.tw",
+        "user:00599089@lab.cathaybkdev.com.tw"
       ]
     }
     "${local.env}sc${local.apid}g04" = { // redis-ca
       label = "redis-ca"
       members = [
         "serviceAccount:${google_service_account.pod_sa["vow-bff-official"].email}",
-        "serviceAccount:${google_service_account.pod_sa["vow-bff-cms"].email}"
+        "serviceAccount:${google_service_account.pod_sa["vow-bff-cms"].email}",
+        # 開發者群組權限，用於 TLS 連線
+        "user:00597438@lab.cathaybkdev.com.tw",
+        "user:00599089@lab.cathaybkdev.com.tw"
+
       ]
     }
     "${local.env}sc${local.apid}g90" = {
